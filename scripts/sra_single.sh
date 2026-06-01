@@ -1,0 +1,70 @@
+#!/bin/bash
+#$ -N sra_single_downloads
+#$ -cwd
+#$ -S /bin/bash
+#$ -pe smp 20
+#$ -q long
+
+# Aborta el script inmediatamente si cualquier comando falla.
+set -e
+
+echo "------------------------------------"
+echo "Job-ID: $JOB_ID"
+echo "Hostname: $(hostname)"
+echo "Fecha: $(date)"
+echo "Directorio de trabajo: $(pwd)"
+echo "------------------------------------"
+
+# 1) Inicializa Mamba/Conda
+echo "Activando el entorno de Conda..."
+source /etc/bashrc
+conda activate sra-tools
+echo "Entorno de Conda activado con éxito."
+
+# 2) Verifica que los comandos clave existan
+echo "Verificando la ubicación de los comandos..."
+which conda
+which parallel
+which fasterq-dump
+echo "Verificación de comandos completa."
+
+# 3) Verifica el archivo de entrada
+if [ -z "$1" ]; then
+    echo "ERROR: No se proporcionó la ruta al archivo de SRRs (SINGLE)."
+    exit 1
+fi
+SRR_LIST_FILE="$1"
+echo "Ruta del archivo de SRR(SINGLE): $SRR_LIST_FILE"
+echo "------------------------------------"
+
+if [ -z "$2" ];
+then
+    echo "ERROR: No se proporcionó la ruta del directorio de salida (Argumento $2)."
+    exit 1
+fi
+OUTPUT_DIR="$2"
+echo "Directorio de salida: $OUTPUT_DIR"
+echo "------------------------------------"
+
+export OUTPUT_DIR
+# 4) Ejecuta el proceso principal
+echo "Iniciando descargas Single-end en paralelo..."
+
+# Directorio para temporales de parallel
+TMP_PARALLEL="$OUTPUT_DIR/tmp_parallel"
+mkdir -p "$TMP_PARALLEL"
+
+parallel --env OUTPUT_DIR --tmpdir "$TMP_PARALLEL" -j 5 '
+    SRR={}
+    echo "Iniciando descarga de: $SRR"
+
+    if [ -f "$OUTPUT_DIR/$SRR.fastq.gz" ]; then
+        echo "  -> $SRR ya tiene .fastq.gz, se omite."
+    else
+        echo "  -> Descargando y comprimiendo $SRR..."
+        fasterq-dump --threads 4 --outdir "$OUTPUT_DIR" "$SRR"
+        gzip "$OUTPUT_DIR/$SRR.fastq"
+    fi
+' < "$SRR_LIST_FILE"
+
+echo "Todas las descargas single han sido procesadas."
